@@ -1,0 +1,139 @@
+**<code appendix>**
+
+```{r}
+# Set seed for reproducibility
+set.seed(352)
+
+# Define the number of total data points
+n <- 214
+
+# Define bilateral_aid variable
+Bilateral_aid <- c(rep(1, floor(n*0.7)), rep(0, ceiling(n*0.3)))
+
+# Define staff_number variable
+Staff_number <- 
+  c(rep(1, floor(sum(Bilateral_aid == 1)*0.74)), 
+    rep(0, ceiling(sum(Bilateral_aid == 1)*0.26)), 
+    rep(0, floor(sum(Bilateral_aid == 0)*0.64)), 
+    rep(1, ceiling(sum(Bilateral_aid == 0)*0.36)))
+
+# Define masters_requirement variable
+Masters_requirement <- 
+  c(rep(1, floor(sum(Bilateral_aid == 1)*0.85)), 
+    rep(0, ceiling(sum(Bilateral_aid == 1)*0.15)), 
+    rep(0, floor(sum(Bilateral_aid == 0)*0.93)), 
+    rep(1, ceiling(sum(Bilateral_aid == 0)*0.07)))
+
+# Define international_staff variable
+International_staff <- 
+  c(rep(1, floor(sum(Bilateral_aid == 1)*0.64)), 
+    rep(0, ceiling(sum(Bilateral_aid == 1)*0.36)), 
+    rep(0, floor(sum(Bilateral_aid == 0)*0.88)), 
+    rep(1, ceiling(sum(Bilateral_aid == 0)*0.12)))
+
+# Define cooperation variable
+Cooperation <- 
+  c(sample(1:5, sum(Bilateral_aid == 1), 
+           replace = TRUE, prob = c(0.1, 0.2, 0.2, 0.3, 0.2)), 
+    sample(1:5, sum(Bilateral_aid == 0), 
+           replace = TRUE, prob = c(0.4, 0.3, 0.2, 0.15, 0.05)))
+
+# Randomly permute the order of the data
+random_order <- sample(1:n, n)
+Bilateral_aid <- Bilateral_aid[random_order]
+Staff_number <- Staff_number[random_order]
+Masters_requirement <- Masters_requirement[random_order]
+International_staff <- International_staff[random_order]
+Cooperation <- Cooperation[random_order]
+
+# Create the data frame
+df <- data.frame(Bilateral_aid, Staff_number, Masters_requirement, International_staff, Cooperation)
+
+```
+
+```{r}
+# Required libraries
+library(MatchIt)
+library(dplyr)
+
+# Calculate Mahalanobis distance for the matched data
+covariates <- c("Staff_number", "Masters_requirement", "International_staff")
+covmat <- select(df, one_of(covariates))
+
+# Calculate Mahalanobis distance
+df$covmh <- mahalanobis(
+  x = covmat,
+  center = colMeans(covmat, na.rm = TRUE),
+  cov = cov(covmat, use = "complete.obs")
+)
+
+# Calculate matrix of Mahalanobis distances
+mhdist_mat_matched <- outer(df$covmh, df$covmh, FUN = \(x, y) abs(x - y))
+
+# Print matrix
+# Load required library
+library(RItools)
+
+# Perform balance test using Mahalanobis distances
+xb_matched <- xBalance(Bilateral_aid ~ mhdist_mat_matched, data = df, report = "all")
+
+```
+
+
+```{r}
+# Load necessary libraries
+library(broom)
+library(MatchIt)
+
+# Set the number of simulations
+n_sims <- 1000
+
+# Initialize vectors to store results
+p_values <- numeric(n_sims)
+coef_estimates <- numeric(n_sims)
+ci_coverage <- numeric(n_sims)
+
+library(estimatr)
+
+# Loop over simulations
+for (i in 1:n_sims) {
+  # Randomly permute the Bilateral_aid variable in the matched data
+  df$Bilateral_aid <- sample(df$Bilateral_aid)
+  
+  # Fit linear regression model on matched data
+  model <- lm_robust(Cooperation ~ Bilateral_aid, data = df)
+  
+  # Extract p-value and coefficient for Bilateral_aid
+  p_values[i] <- summary(model)$coefficients[2, "Pr(>|t|)"]
+  coef_estimates[i] <- coef(model)["Bilateral_aid"]
+  
+  # Compute confidence interval coverage
+  ci <- confint(model)["Bilateral_aid", ]
+  ci_coverage[i] <- ci[1] <= 0 & ci[2] >= 0
+}
+
+# False positive rate
+false_positive_rate <- mean(p_values < 0.05 & coef_estimates != 0)
+##result: 0.042
+
+# Power
+power <- mean(p_values < 0.05 & coef_estimates != 0)
+## result: 0.042
+
+# Confidence interval coverage
+conf_interval_coverage <- mean(ci_coverage)
+##result: 0.958
+
+```
+
+```{r}
+# Compute the bias of the estimator
+bias <- mean(coef_estimates) - 0
+
+# Compute the MSE of the estimator
+mse <- mean((coef_estimates - 0)^2)
+
+# Print
+mse 
+## result [1] 0.03669404
+```
